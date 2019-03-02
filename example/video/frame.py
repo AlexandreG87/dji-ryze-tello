@@ -26,38 +26,32 @@ import PIL.Image as pil
 # ------------------------------------------
 
 def split(value, size=2):
-    """ size=2: 'abcdefg' -> ['ab', 'cd', 'ef', 'gh'] """
-    return [value[0 + i:size + i] for i in range(0, len(value), size)]
+    return tuple(value[0 + i:size + i] for i in range(0, len(value), size))
 
-def hex_to_dec(value):
-    """ 'ff' -> 255 ; 'af fe' -> [175, 254] ; ('af', 'fe) -> [175, 254] """
-    if type(value) in (list, tuple):
-        return [hex_to_dec(item) for item in value]
-    else:
-        value = value.split(' ')
-        if len(value) == 1:
-            return int(str(value[0]), 16)
+
+def hex2dec(value):
+    if type(value) == str:
+        value = value.strip()
+        if ' ' not in value:
+            return int(value, 16)
         else:
-            return hex_to_dec(value)
-
-def dec_to_hex(value, size=0):
-    """ size=0: 12648430 -> ['c0', 'ff', 'ee'] ; (255, 255) -> ['ff', 'ff'] ; (256 * 256 - 1, 10) -> ['ff', 'ff', '0a'] """
-    if type(value) in (list, tuple):
-        return [item for sub in [dec_to_hex(item) for item in value] for item in sub]  # flatten
-    elif type(value) in (bytes,):
-        return dec_to_hex(tuple(value), size)
+            return hex2dec(value.split(' '))
     else:
-        s = '{:02x}'.format(value)
-        s = '0' * (len(s) % 2) + s
-        if size > 0:
-            s = s.zfill(size * 2)[:size * 2]
-        return split(s)
+        return tuple(int(item, 16) for item in value)
+
+
+def dec2hex(value, delim=''):
+    if type(value) == int:
+        s = hex(value)
+        return '0' * (len(s) % 2) + s[2:]     
+    else:       
+        return delim.join(dec2hex(item, delim) for item in value) 
 
 # ------------------------------------------
 
 def collect_stream(file):
     stream = []
-    for line in file:    
+    for line in file:
         try:
             obj = json.loads(line)
             obj = obj[tuple(obj.keys())[0]]
@@ -65,14 +59,14 @@ def collect_stream(file):
             if ('UDP' in obj and fn == 0 and obj['UDP']['dport'] == 7797) or ('UDP' not in obj and fn > 0 and 'LLC' in obj):
                 res = ''
                 if fn > 0:
-                    res += dec_to_hex(obj['LLC']['dsap'])[0]
-                    res += dec_to_hex(obj['LLC']['ssap'])[0]
-                    res += dec_to_hex(obj['LLC']['ctrl'])[0]
+                    res += dec2hex(obj['LLC']['dsap'])
+                    res += dec2hex(obj['LLC']['ssap'])
+                    res += dec2hex(obj['LLC']['ctrl'])
                 if 'Raw' in obj: res += obj['Raw']['load']
                 if 'Padding' in obj: res += obj['Padding']['load']
                 stream.append((sn, fn, res))
-        except:
-            pass
+        except Exception as e:
+            print('exception', e, file=sys.stderr)
     return stream
 
 # ------------------------------------------
@@ -88,11 +82,12 @@ def extract_h264_frame(stream):
                start = True  
         if start:           
             if fn == 0:
-                fsn, ffn = hex_to_dec(split(data[0:4]))
+                fsn, ffn = hex2dec(split(data[0:4]))
                 content += data[4:-8]  # sn 2 bytes; fcs 4 bytes
             else:
                 content += data[:-8]   # fcs 4 bytes
     return content
+
 
 def print_h264_frame(frame):
     content = split(frame, 32)
@@ -113,7 +108,7 @@ if __name__ == "__main__":
 
     if len(frame) > 0:
 
-        frame = hex_to_dec(split(frame))
+        frame = hex2dec(split(frame))
      
         if os.path.isfile(file_img): os.remove(file_img)
 
@@ -141,3 +136,4 @@ if __name__ == "__main__":
             image = image.reshape(shape)
             im = pil.fromarray(image)
             im.save(file_img)
+
